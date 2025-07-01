@@ -18,7 +18,7 @@ app.use(express.json()); //parser
 
 app.use(
   cors({
-    origin: "http://localhost:5173",
+    origin: "https://shopcommercify.netlify.app",
     credentials: true,
   })
 );
