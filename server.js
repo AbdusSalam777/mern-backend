@@ -72,6 +72,10 @@ app.get("/get-data", async (req, res) => {
   }
 });
 
+app.get("/", (req, res) => {
+  res.send("✅ Backend is running!");
+});
+
 app.post("/sign-in", async (req, res) => {
   try {
     const { email, password } = req.body;
