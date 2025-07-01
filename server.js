@@ -172,6 +172,15 @@ app.delete("/clear-cart", async (req, res) => {
   }
 });
 
+app.post("/logout", (req, res) => {
+  res.clearCookie("token", {
+    httpOnly: true,
+    secure: true,
+    sameSite: "None",
+  });
+  res.status(200).json({ message: "Logout successful" });
+});
+
 app.listen(PORT, () => {
   console.log(`🚀 Server running on PORT ${PORT}`);
 });
