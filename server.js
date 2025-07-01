@@ -6,165 +6,129 @@ const jwt = require("jsonwebtoken");
 const cookieParser = require("cookie-parser");
 const dotenv = require("dotenv");
 
-const PORT = 3000;
 dotenv.config();
-const secret = process.env.JWT_SECRET;
 
 const app = express();
+const PORT = process.env.PORT || 3000;
+const secret = process.env.JWT_SECRET;
 
-//middlewares
-
-app.use(express.json()); //parser
+// Middleware
+app.use(express.json());
+app.use(cookieParser());
 
 app.use(
   cors({
-    origin: "https://shopcommercify.netlify.app",
+    origin: [
+      "http://localhost:5173",
+      "https://shopcommercify.netlify.app"
+    ],
     credentials: true,
   })
 );
 
-app.use(cookieParser()); //cookie-parser
-
-//MongoDB Logic here
-
-mongoose //Connecting to MongoDB server
-  .connect(
-    "mongodb+srv://abdusalam0381:6rg0VbAFq0dVKJTy@cluster0.yd187o8.mongodb.net/Cart?retryWrites=true&w=majority&appName=Cluster0"
-  )
-  .then(() => {
-    console.log("Connected to MongoDB successfully");
+// MongoDB Connection
+mongoose
+  .connect(process.env.MONGO_URL, {
+    useNewUrlParser: true,
+    useUnifiedTopology: true,
   })
-  .catch((error) => {
-    console.log("Error connecting to MongoDB", error);
-  });
+  .then(() => console.log("Connected to MongoDB successfully"))
+  .catch((err) => console.log("MongoDB connection error:", err));
 
-const Data_Schema = new mongoose.Schema({
-  //Schema-1 for cart-data and order-data
-  src: String,
-  title: String,
-  price: Number,
-});
+// Schemas
+const Data_Schema = new mongoose.Schema({ src: String, title: String, price: Number });
+const Order_Schema = new mongoose.Schema({ src: String, title: String, price: Number });
+const User_Schema = new mongoose.Schema({ email: String, password: String });
 
-const Order_Schema = new mongoose.Schema({
-  //Schema-2 for order-data
-  src: String,
-  title: String,
-  price: Number,
-});
-
-const User_Schema = new mongoose.Schema({
-  //Schema-3 for cart-data
-  email: String,
-  password: String,
-});
-
-const model_cart = mongoose.model("data", Data_Schema); //model-1 for cart data
-
-const model_user = mongoose.model("user", User_Schema); //model-2 for user data
-
+const model_cart = mongoose.model("data", Data_Schema);
+const model_user = mongoose.model("user", User_Schema);
 const order_model = mongoose.model("order", Order_Schema);
 
+// Routes
+app.get("/", (req, res) => {
+  res.send("Backend is running on Render 🚀");
+});
+
 app.post("/send-data", async (req, res) => {
-  //sending cart data to MongoDb
   const data = req.body;
   const saved = await model_cart.create(data);
   res.status(201).json(saved);
 });
 
 app.get("/get-data", async (req, res) => {
-  //getting cart data from MongoDB
   try {
     const alldata = await model_cart.find();
     res.status(200).json(alldata);
   } catch (error) {
-    console.log(error);
+    res.status(500).json({ error: "Failed to fetch data" });
   }
 });
 
 app.post("/sign-in", async (req, res) => {
-  //Sign-in logic
-  //fetching user data from frontend,hashing password and storing data to MongoDB
-
   try {
     const { email, password } = req.body;
     const isuser = await model_user.findOne({ email });
 
-    if (isuser) {
-      return res.status(400).json({ error: "User already exists !" });
-    }
+    if (isuser) return res.status(400).json({ error: "User already exists!" });
 
     const hashedPassword = await bcrypt.hash(password, 10);
-    await model_user.create({
-      email: email,
-      password: hashedPassword,
-    });
-    res.status(201).json({ message: "User created successfully !" });
+    await model_user.create({ email, password: hashedPassword });
+
+    res.status(201).json({ message: "User created successfully!" });
   } catch (error) {
-    console.log(error);
+    res.status(500).json({ error: "Signup failed" });
   }
 });
 
 app.post("/login", async (req, res) => {
   try {
     const { email, password } = req.body;
-
     const user = await model_user.findOne({ email });
 
-    if (!user) {
-      return res.status(404).json({ message: "User not found" }); // ✅ Stop execution
-    }
+    if (!user) return res.status(404).json({ message: "User not found" });
 
     const isValid = await bcrypt.compare(password, user.password);
-
-    if (!isValid) {
-      return res.status(401).json({ message: "Invalid password" });
-    }
-
-    //creating JWT(Javascript Web Token)
+    if (!isValid) return res.status(401).json({ message: "Invalid password" });
 
     const token = jwt.sign({ user: user._id }, secret);
 
     res.cookie("token", token, {
       httpOnly: true,
-      secure: false,
+      secure: true,
+      sameSite: "None",
     });
 
     res.json({ message: "Login Successful", user: { email: user.email } });
   } catch (error) {
-    res.status(500).json({ message: "Login Failed !" });
-    console.log(error);
+    res.status(500).json({ message: "Login Failed" });
   }
 });
 
 app.get("/verify", (req, res) => {
   const token = req.cookies.token;
 
-  if (!token) {
-    return res.status(401).json({ message: "No token found !" });
-  }
+  if (!token) return res.status(401).json({ message: "No token found!" });
 
   try {
-    const decoded = jwt.verify(token, secret);
-    res.status(200).json({ messgae: "User verified !" });
+    jwt.verify(token, secret);
+    res.status(200).json({ message: "User verified!" });
   } catch (error) {
-    return res.status(403).json({ message: "Expired token !" });
+    res.status(403).json({ message: "Expired or invalid token!" });
   }
 });
 
 app.get("/count", async (req, res) => {
   try {
-    const response = await model_cart.find();
-    const items = response.length;
+    const items = await model_cart.countDocuments();
     res.json({ count: items });
   } catch (error) {
-    console.log(error);
+    res.status(500).json({ message: "Error fetching count" });
   }
 });
 
 app.delete("/delete-item/:id", async (req, res) => {
-  const id = req.params.id;
   try {
-    await model_cart.findByIdAndDelete(id);
+    await model_cart.findByIdAndDelete(req.params.id);
     res.status(200).json({ message: "Item deleted!" });
   } catch (err) {
     res.status(500).json({ error: "Delete failed!" });
@@ -172,41 +136,25 @@ app.delete("/delete-item/:id", async (req, res) => {
 });
 
 app.post("/save-order", async (req, res) => {
- 
-  const OrderData = req.body;
-
   try {
-  const saved =  await order_model.create(OrderData);
+    const saved = await order_model.create(req.body);
     res.status(201).json({ message: "Order saved", data: saved });
   } catch (error) {
-    console.log(error);
+    res.status(500).json({ error: "Order failed" });
   }
 });
 
-app.delete("/clear-cart",async(req,res)=>{
-  
-  const {ids}=req.body;
-
-  try{
-
-   const ids_obj = ids.map((item) => new mongoose.Types.ObjectId(item));
-   const result= await model_cart.deleteMany({_id:{$in:ids_obj}});
-    res.status(200).json({ message: "Cart items deleted", deletedCount: result.deletedCount });
+app.delete("/clear-cart", async (req, res) => {
+  try {
+    const { ids } = req.body;
+    const ids_obj = ids.map((item) => new mongoose.Types.ObjectId(item));
+    const result = await model_cart.deleteMany({ _id: { $in: ids_obj } });
+    res.status(200).json({ message: "Cart cleared", deletedCount: result.deletedCount });
+  } catch (error) {
+    res.status(500).json({ message: "Failed to clear cart" });
   }
-
-  catch(error){
-    console.log(error);
-    
-  }
-})
+});
 
 app.listen(PORT, () => {
-  //listening server on PORT 3000
-  console.log(`Server listening on PORT ${PORT}`);
+  console.log(`✅ Server listening on port ${PORT}`);
 });
-
-console.log(secret);
-
-//bcrypt
-//JWT
-//cookie-parser
